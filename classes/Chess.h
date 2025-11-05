@@ -2,18 +2,19 @@
 
 #include "Game.h"
 #include "Grid.h"
+#include "Logger.h"
 
 constexpr int pieceSize = 80;
 
 enum ChessPiece
 {
-    NoPiece,
-    Pawn,
-    Knight,
-    Bishop,
-    Rook,
-    Queen,
-    King
+    NoPiece, //0
+    Pawn, //1
+    Knight, //2
+    Bishop, //3
+    Rook, //4
+    Queen, //5
+    King //6
 };
 
 class Chess : public Game
@@ -40,7 +41,7 @@ public:
     Grid* getGrid() override { return _grid; }
 
 private:
-    Bit* PieceForPlayer(const int playerNumber, ChessPiece piece);
+    Bit* PieceForPlayer(const int playerNumber, int piece);
     Player* ownerAt(int x, int y) const;
     void FENtoBoard(const std::string& fen);
     char pieceNotation(int x, int y) const;

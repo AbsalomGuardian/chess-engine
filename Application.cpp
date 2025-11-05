@@ -5,7 +5,7 @@
 #include "classes/Othello.h"
 #include "classes/Connect4.h"
 #include "classes/Chess.h"
-
+#include "classes/Logger.h"
 namespace ClassGame {
         //
         // our global variables
@@ -18,6 +18,7 @@ namespace ClassGame {
         // game starting point
         // this is called by the main render loop in main.cpp
         //
+        Logger* L = Logger::getInstance();
         void GameStartUp() 
         {
             game = nullptr;
@@ -29,8 +30,9 @@ namespace ClassGame {
         //
         void RenderGame() 
         {
+                
                 ImGui::DockSpaceOverViewport();
-
+                L->ShowLogWindow();
                 //ImGui::ShowDemoWindow();
 
                 ImGui::Begin("Settings");
