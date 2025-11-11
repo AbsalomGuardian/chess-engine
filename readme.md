@@ -1,13 +1,20 @@
-Fork or clone your this chess project into a new GitHub repository.
+Absalom Ranelletti Fall 2025 CSE123
 
-Add support for FEN stringsLinks to an external site. to your game setup so that instead of the current way you are setting up your game board you are setting it up with a call similar to the following call.
+Chess Engine program
 
-FENtoBoard("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR");
+Current fuctionality:
 
-Your routine should be able to take just the board position portion of a FEN string, or the entire FEN string like so:
+Create board from FEN string set in source code.
 
-FENtoBoard("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+Occupancy bitboards for all pieces.
 
-(you can ignore the end for now)
+Movement rules for pawns, knights, and kings.
 
-This will allow you to quickly check that your castling, promotion and en passant code is working.
+Efficient move generation for implemented pieces.
+
+Complete player v player game using implemented pieces.
+
+Has capturing.
+
+Checks for winner, doesn't check for checks or checkmates.
+

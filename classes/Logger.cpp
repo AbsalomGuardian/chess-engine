@@ -36,8 +36,9 @@ Logger* Logger::getInstance(){
 void Logger::ShowLogWindow() {
         visible = true; //for future functionality
         //set the starting size and position, but it can still be adjusted by the player
-        ImGui::SetNextWindowPos(ImVec2(114, 148), ImGuiCond_Once);
-        ImGui::SetNextWindowSize(ImVec2(477, 806), ImGuiCond_Once);
+        //currently this is reset every time the program loads and overrides whats saved in the ini
+        //ImGui::SetNextWindowPos(ImVec2(114, 148), ImGuiCond_Once);
+        //ImGui::SetNextWindowSize(ImVec2(477, 806), ImGuiCond_Once);
         //ImGui::Begin("Log", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_MenuBar);
         ImGui::Begin("Log", nullptr, ImGuiWindowFlags_MenuBar);
         ImVec4* colors = ImGui::GetStyle().Colors;

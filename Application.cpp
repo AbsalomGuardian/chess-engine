@@ -98,13 +98,23 @@ namespace ClassGame {
         //
         void EndOfTurn() 
         {
+            //L->LogGameEvent("looking for winner...");
             Player *winner = game->checkForWinner();
             if (winner)
             {
+                //L->LogInfo("there is a winner");
                 gameOver = true;
                 gameWinner = winner->playerNumber();
+                if(gameWinner == 0) {
+                    L->LogGameEvent("White has won.");
+                } else {
+                    L->LogGameEvent("Black has won.");
+                }
+            } else {
+                //L->LogInfo("no winner returned");
             }
             if (game->checkForDraw()) {
+                //L->LogInfo("there is no winner");
                 gameOver = true;
                 gameWinner = -1;
             }

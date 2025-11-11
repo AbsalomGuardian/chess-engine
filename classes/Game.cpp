@@ -391,6 +391,7 @@ void Game::mouseUp(ImVec2 &location, Entity *entity)
 				_oldHolder->cancelDragBit(_dragBit);
 			_dragBit->setPosition(_oldPos);
 			clickedBit(*_dragBit);
+			clearBoardHighlights(); //change so that highlights will go away if you decide not to move a piece
 		}
 		_dropTarget = nullptr;
 		_dragBit = nullptr;

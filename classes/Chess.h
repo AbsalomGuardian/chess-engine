@@ -3,7 +3,13 @@
 #include "Game.h"
 #include "Grid.h"
 #include "Logger.h"
-
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif
+#include <iostream>
+#include <stdio.h>
+#include <stdint.h>
+#include <vector>
 constexpr int pieceSize = 80;
 
 enum ChessPiece
@@ -17,6 +23,70 @@ enum ChessPiece
     King //6
 };
 
+
+enum ChessSide {
+    White, //0
+    Black //1
+};
+
+class BitboardElement {
+    public:
+        //Constructors
+        BitboardElement()
+            : _data(0) {}
+        BitboardElement (uint64_t data)
+            : _data(data) {}
+
+        //Getters and Setters
+        uint64_t getData() const {return _data;}
+        void setData(uint64_t data) { _data = data;}
+        
+        //method ot loop through each bit in the element and perform an operation on it.
+        template <typename Func>
+        void forEachBit(Func func) const {
+            if(_data != 0) {
+                uint64_t tempData = _data;
+                while (tempData) {
+                    int index = bitScanForward(tempData);
+                    func(index);
+                    tempData &= tempData - 1;
+                }
+            }
+        }
+        BitboardElement& operator |=(const uint64_t other) {
+            _data |= other;
+            return *this;
+        }
+
+        void printBitboard() {
+            std::cout << "\n  a b c d e f g h\n";
+            for (int rank = 7; rank >= 0; rank--) {
+                std::cout << (rank + 1) << " ";
+                for (int file = 0; file < 8; file++) {
+                    int square = rank * 8 + file;
+                    if(_data & (1ULL << square)) {
+                        std::cout << "X ";
+                    } else {
+                        std::cout << ". ";
+                    }
+                }
+                std::cout << (rank + 1) << "\n";
+                std::cout << std::flush;
+            }
+        }
+
+        private:
+            uint64_t _data;
+
+            inline int bitScanForward(uint64_t bb) const {
+                unsigned long index;
+                _BitScanForward64(&index, bb);
+                return index;
+            };
+    };
+
+
+
 class Chess : public Game
 {
 public:
@@ -29,7 +99,17 @@ public:
     bool canBitMoveFromTo(Bit &bit, BitHolder &src, BitHolder &dst) override;
     bool actionForEmptyHolder(BitHolder &holder) override;
 
-    void stopGame() override;
+    //new overrides
+    void endTurn() override;
+    void clearBoardHighlights() override;
+    // Should handle any side effects of a Bit's movement, such as captures or scoring.
+	// Does not need to do the actual movement! That's already happened.
+	// It should end by calling endTurn, if the player's turn is over.
+	// Default implementation just calls endTurn.
+	virtual void bitMovedFromTo(Bit &bit, BitHolder &src, BitHolder &dst) override;
+
+    virtual void stopGame() override; //for some reason was throwing a fit until I added virtual
+    bool _gameOver; //needs to be synced with the gameOver in Application.cpp. So that you can't move pieces after a game has ended
 
     Player *checkForWinner() override;
     bool checkForDraw() override;
@@ -40,6 +120,23 @@ public:
 
     Grid* getGrid() override { return _grid; }
 
+    struct BitMove {
+        uint8_t from;
+        uint8_t to;
+        uint8_t piece;
+
+        BitMove(int from, int to, ChessPiece piece)
+            : from(from), to(to), piece(piece) { }
+        BitMove() : from(0), to(0), piece(NoPiece) { }
+        bool operator==(const BitMove& other) const {
+            return from == other.from &&
+            to == other.to &&
+            piece == other.piece;
+        }
+    };
+
+    std::vector<int> _highlightedIndexes; //for the override to clearBoardHighlights, so the entire board doesn't have to be traversed
+
 private:
     Bit* PieceForPlayer(const int playerNumber, int piece);
     Player* ownerAt(int x, int y) const;
@@ -47,4 +144,17 @@ private:
     char pieceNotation(int x, int y) const;
 
     Grid* _grid;
+
+    //move member variables
+    BitboardElement _knightboards[64];
+    std::vector<BitMove> _moves;
+    BitboardElement _kingboards[64];
+    //move generation
+    BitboardElement generateKnightMovesBitboard(int square);
+    void generateKnightMoves(std::vector<BitMove>& moves, BitboardElement knightBoard, uint64_t emptySquares);
+    std::vector<BitMove> generateAllMoves(std::string &state);
+    BitboardElement generateKingMovesBitboard(int square);
+    void generateKingMoves(std::vector<BitMove>& moves, BitboardElement kingBoard, uint64_t emptySquares);
+    void generatePawnMoves(std::vector<BitMove>&moves, BitboardElement pawns, BitboardElement selfOccupancy, BitboardElement enemyOccupany, ChessSide side);
+    void PawnMovesFromBitboard(std::vector<BitMove>&moves, BitboardElement board, int offset);
 };
