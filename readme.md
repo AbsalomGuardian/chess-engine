@@ -18,3 +18,5 @@ Has capturing.
 
 Checks for winner, doesn't check for checks or checkmates.
 
+Note, by default the FEN string in the source code generates an in-progress game instead of the starting positions.
+
