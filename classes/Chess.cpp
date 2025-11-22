@@ -3,19 +3,40 @@
 #include <cmath>
 #include "../Application.h"
 using namespace std;
-
+#include "MagicBitboards.h"
 
 
 Chess::Chess()
 {
     _grid = new Grid(8, 8);
+    //intalize boardLookup with the _bitboards index for each piece
+    _boardLookup['0'] = EMPTY;
+    _boardLookup['P'] = WHITE_PAWNS;
+    _boardLookup['N'] = WHITE_KNIGHTS;
+    _boardLookup['B'] = WHITE_BISHOPS;
+    _boardLookup['R'] = WHITE_ROOKS;
+    _boardLookup['Q'] = WHITE_QUEEN;
+    _boardLookup['K'] = WHITE_KING;
+    _boardLookup['p'] = BLACK_PAWNS;
+    _boardLookup['n'] = BLACK_KNIGHTS;
+    _boardLookup['b'] = BLACK_BISHOPS;
+    _boardLookup['r'] = BLACK_ROOKS;
+    _boardLookup['q'] = BLACK_QUEEN;
+    _boardLookup['k'] = BLACK_KING;
+
+    initMagicBitboards();
+    
+    _gameOptions.AIMAXDepth = 4;
+    _AI_COLOR = Black;
     
 }
 
 Chess::~Chess()
 {
     delete _grid;
+    cleanupMagicBitboards();
 }
+
 
 char Chess::pieceNotation(int x, int y) const
 {
@@ -59,27 +80,31 @@ void Chess::setUpBoard()
     _gameOptions.rowY = 8;
 
     _grid->initializeChessSquares(pieceSize, "boardsquare.png");
-    //FENtoBoard("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR");
-    FENtoBoard("2rq3r/pp1bk3/4p2p/n6R/2nRNB2/2Q3P1/P4PB1/2K5");
+    FENtoBoard("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR");
+    //FENtoBoard("2rq3r/pp1bk3/4p2p/n6R/2nRNB2/2Q3P1/P4PB1/2K5");
     
     
-    //pre-compute an array of all valid knight moves
-    for(int i = 0; i < 64; i++) { //temporary change for debugging
+    //pre-compute valid moves for applicable pieces
+    for(int i = 0; i < 64; i++) {
         _knightboards[i] = generateKnightMovesBitboard(i);
         _kingboards[i] = generateKingMovesBitboard(i);
     }
 
-    //generate all of the moves at the start of the game. Going to have to do that more often when pawns are implimented.
+    //generate all of the moves for the start of the game.
     std::string state = stateString();
-    _moves = generateAllMoves(state);
-    //print all moves for testing
     Logger *L = Logger::getInstance();
-    L->LogGameEvent("All moves at start of game: ");
-    for(int i = 0; i < _moves.size(); i++) {
-        L->LogInfo("Piece " + to_string(_moves[i].piece) + " from " + to_string(_moves[i].from) + " to " + to_string(_moves[i].to));
-    }
+    //L->LogInfo("Calling generate all moves as setUpBoard()");
+    _moves = generateAllMoves(state, White); //obviously first generate white moves
+    //print all moves for testing
+    //L->LogGameEvent("All moves at start of game: ");
+    //for(int i = 0; i < _moves.size(); i++) {
+        //L->LogInfo("Piece " + to_string(_moves[i].piece) + " from " + to_string(_moves[i].from) + " to " + to_string(_moves[i].to));
+    //}
 
     _gameOver = false;
+    if (gameHasAI()) {
+        setAIPlayer(AI_PLAYER);
+    }
     startGame();
 }
 
@@ -163,16 +188,27 @@ bool Chess::actionForEmptyHolder(BitHolder &holder)
 
 
 //new overrides
-void Chess::endTurn() { //copy of the version from Game, just with new calculation of moves
+//promotion_index will be -1 if there's no promotion to check. Otherwise calls the relevant function.
+//promotion handles update of state string
+void Chess::endTurn(int promotion_index) { //copy of the version from Game, just with promotion logic added
 
 	_gameOptions.currentTurnNo++;
 	std::string startState = stateString();
-    _moves = generateAllMoves(startState);
+    if(promotion_index != -1) {
+        Promotion(promotion_index, startState, true);
+        startState = stateString(); //update state string
+    }
+    
 	Turn *turn = new Turn;
 	turn->_boardState = stateString();
 	turn->_date = (int)_gameOptions.currentTurnNo;
 	turn->_score = _gameOptions.score;
 	turn->_gameNumber = _gameOptions.gameNumber;
+    int p_num = getCurrentPlayer()->playerNumber(); //p_num will be the number of whose turn has started
+    Logger *L = Logger::getInstance();
+    //L->LogInfo("Calling generate all moves as end turn");
+    if(p_num == 1) {_moves = generateAllMoves(startState, Black);}
+    else {_moves = generateAllMoves(startState, White);}
 	_turns.push_back(turn);
 	ClassGame::EndOfTurn();
 }
@@ -190,11 +226,47 @@ void Chess::clearBoardHighlights() {
     _highlightedIndexes.clear();
 }
 
+
+//check at index (has to be top or bottom rows) if there's a pawn on the other side in passed string
+//if so set to string. Generate all moves will handle the changes in the bitboards
+//AI calls with real false, actual move logic is true. It will change the stuff on the actual grid
+//0-7 and 57-64 are the end rows
+void Chess::Promotion(int index, string &state, bool real) {
+    //returns after doing nothing if call is invalid
+    if(index >= 0 && index <= 7) { //is black piece getting promoted
+        if(state[index] == 'p') {
+            state[index] = 'q';
+        } else {
+            return; //end function if not a pawn
+        }
+        
+    } else if(index >= 57 && index <= 64) { //is white pawn getting promoted
+        if(state[index] == 'P') {
+            state[index] = 'Q';
+        } else {return;}        
+    } else {return;} //return if index was invalid, try to avoid making those calls
+
+    if(real) { //only reach this branch if promotion was valid
+        BitHolder* square = (BitHolder*) _grid->getSquareByIndex(index);
+        Player* p = square->bit()->getOwner();
+        Bit* newPiece = PieceForPlayer(p->playerNumber(), 5); //piece for player handles right color
+        square->setBit(newPiece);
+        newPiece->setPosition(square->getPosition());
+
+    }
+}
+
 void Chess::bitMovedFromTo(Bit &bit, BitHolder &src, BitHolder &dst) {
-    //capturing logic to go here
     //this is called before the move is complete, and dst still holds the old bit
-    //dst.destroyBit();
-    endTurn();
+    //because of that can't do the promotion now, endTurn() has to call that, but this can determine if
+    //its even nessecary to check and give it the index to check
+    ChessSquare* destination = (ChessSquare *)&dst;
+    int index = destination->getSquareIndex();
+    if((index >= 0 && index <= 7) || (index >= 57 && index <= 64)) {
+        endTurn(index);
+    } else {
+        endTurn(-1);
+    }
 }
 
 //also handles highlighting
@@ -299,7 +371,7 @@ Player* Chess::checkForWinner()
     }
 }
 
-bool Chess::checkForDraw()
+bool Chess::checkForDraw() //statemates not implimented
 {
     return false;
 }
@@ -309,6 +381,7 @@ std::string Chess::initialStateString()
     return stateString();
 }
 
+//get an up to date stateString drawn from _grid
 std::string Chess::stateString()
 {
     std::string s;
@@ -319,84 +392,102 @@ std::string Chess::stateString()
     );
     return s;}
 
-void Chess::setStateString(const std::string &s)
-{
-    _grid->forEachSquare([&](ChessSquare* square, int x, int y) {
-        int index = y * 8 + x;
-        char playerNumber = s[index] - '0';
-        if (playerNumber) {
-            square->setBit(PieceForPlayer(playerNumber - 1, Pawn));
-        } else {
-            square->setBit(nullptr);
-        }
-    });
+
+//unused function for setting state string from an .ini file to contuine game after closing program
+void Chess::setStateString(const std::string &s) {
+    
 }
+
+//int bitIndex = _bitboardLookup[state[i]]
+//_bitboards[bitIndex] |= 1ULL << i;
 
 //MOVE GENERATION FUNCTIONS
 
- std::vector<Chess::BitMove> Chess::generateAllMoves(std::string &state) {
+ std::vector<Chess::BitMove> Chess::generateAllMoves(std::string &state, ChessSide side) {
+    //Logger *L = Logger::getInstance();
+    //L->LogInfo("Generating moves for side " + to_string(side));
     std::vector<BitMove> moves;
     constexpr uint64_t oneBit = 1; //in lecture, these occupancy boards have 0 for where the units are, which I don't get
 
-    //when these boards are passed by values they are automatically converted to BitboardElements
-    uint64_t whiteKnights = 0LL;
-    uint64_t whitePawns = 0LL;
-    uint64_t whiteRooks = 0LL;
-    uint64_t whiteBishops = 0LL;
-    uint64_t whiteQueen = 0LL;
-    uint64_t whiteKing = 0LL;
+    //initalize bitboards/reset them to blank
+    for(int i = 0; i < NUM_BOARDS; i++) {
+        _bitboards[i] = 0LL;
+    }
 
-    uint64_t blackKnights = 0LL;
-    uint64_t blackPawns = 0LL;
-    uint64_t blackRooks = 0LL;
-    uint64_t blackBishops = 0LL;
-    uint64_t blackQueen = 0LL;
-    uint64_t blackKing = 0LL;
-    //complete occupancy bitboards even if move generation isn't there yet
+    //no branching bitboard population
+    for(int i = 0; i < 64; i++) {
+        //_boardLookup takes char as input and returns which board in _bitboard is the occupancy bitboard for the type of piece at i
+        int boardIndex = _boardLookup[state[i]]; 
+        _bitboards[boardIndex] |= oneBit << i;
+    }
+
+    //branching population currently saved as backup
+    /**
     for(int i = 0; i < 64; i++) {
         if(state[i] == 'N') {
-            whiteKnights |= oneBit << i;
+            _bitboards[WHITE_KNIGHTS] |= oneBit << i;
         }
         else if(state[i] == 'P') {
-            whitePawns |= oneBit << i;
+            _bitboards[WHITE_PAWNS] |= oneBit << i;
         } else if(state[i] == 'R') {
-            whiteRooks |= oneBit << i;
+            _bitboards[WHITE_ROOKS] |= oneBit << i;
         } else if(state[i] == 'B') {
-            whiteBishops |= oneBit << i;
+             _bitboards[WHITE_BISHOPS] |= oneBit << i;
         } else if(state[i] == 'Q') {
-            whiteQueen |= oneBit << i;
+            _bitboards[WHITE_QUEEN] |= oneBit << i;
         } else if(state[i] == 'K') {
-            whiteKing |= oneBit << i;
+            _bitboards[WHITE_KING] |= oneBit << i;
         } else if(state[i] == 'n') {
-            blackKnights |= oneBit << i;
+            _bitboards[BLACK_KNIGHTS] |= oneBit << i;
         } else if(state[i] == 'p') {
-            blackPawns |= oneBit << i;
+            _bitboards[BLACK_PAWNS] |= oneBit << i;
         } else if(state[i] == 'r') {
-            blackRooks |= oneBit << i;
+            _bitboards[BLACK_ROOKS] |= oneBit << i;
         } else if(state[i] == 'b') {
-            blackBishops |= oneBit << i;
+            _bitboards[BLACK_BISHOPS]|= oneBit << i;
         } else if(state[i] == 'q') {
-            blackQueen |= oneBit << i;
+            _bitboards[BLACK_QUEEN] |= oneBit << i;
         } else if(state[i] == 'k') {
-            blackKing |= oneBit << i;
+            _bitboards[BLACK_KING] |= oneBit << i;
         }
         
     }
+    **/
+
     //cout << "after turn " << _turns.size() << " black king bitboard: " << blackKing;
-    uint64_t whiteOccupancy = whiteKnights | whitePawns | whiteRooks | whiteBishops | whiteQueen;
-    uint64_t blackOccupancy = blackKnights | blackPawns | blackRooks | blackBishops | blackQueen;
-    uint64_t occupancy = whiteOccupancy | blackOccupancy; //keep updating as I add new functions
-    //each generate only works on a side at the time, will probably be useful for making the AI
-    generateKnightMoves(moves, whiteKnights, ~whiteOccupancy); //only send spaces that are occupied by allies
-    generateKingMoves(moves, whiteKing, ~whiteOccupancy);
-    generateKnightMoves(moves, blackKnights, ~blackOccupancy);
-    generateKingMoves(moves, blackKing, ~blackOccupancy);
+    _bitboards[ALL_WHITE] = _bitboards[WHITE_PAWNS].getData() | _bitboards[WHITE_KNIGHTS].getData() | _bitboards[WHITE_ROOKS].getData() | _bitboards[WHITE_BISHOPS].getData() | _bitboards[WHITE_QUEEN].getData() | _bitboards[WHITE_KING].getData();
+    _bitboards[ALL_BLACK] = _bitboards[BLACK_PAWNS].getData() | _bitboards[BLACK_KNIGHTS].getData() | _bitboards[BLACK_ROOKS].getData() | _bitboards[BLACK_BISHOPS].getData() | _bitboards[BLACK_QUEEN].getData() | _bitboards[BLACK_KING].getData();
+    _bitboards[OCCUPANCY] = _bitboards[ALL_WHITE].getData() | _bitboards[ALL_BLACK].getData();
+    //_bitboards[EMPTY] = ~_bitboards[OCCUPANCY].getData(); //EMPTY is populated by state string loop
+    //can't think of a way to avoid branching, but I do only generate half as many moves now
+    if(side == White) {
+        generateKnightMoves(moves, _bitboards[WHITE_KNIGHTS], ~_bitboards[ALL_WHITE].getData()); //only send spaces that are occupied by allies
+        generateKingMoves(moves, _bitboards[WHITE_KING], ~_bitboards[ALL_WHITE].getData());
+        generatePawnMoves(moves, _bitboards[WHITE_PAWNS], _bitboards[ALL_WHITE], _bitboards[ALL_BLACK], White);
+        GenerateBishopMoves(moves, _bitboards[WHITE_BISHOPS], _bitboards[OCCUPANCY], _bitboards[ALL_WHITE]);
+        GenerateRookMoves(moves, _bitboards[WHITE_ROOKS], _bitboards[OCCUPANCY], _bitboards[ALL_WHITE]);
+        GenerateQueenMoves(moves, _bitboards[WHITE_QUEEN], _bitboards[OCCUPANCY], _bitboards[ALL_WHITE]);
+    } else if(side == Black) {
+        generateKnightMoves(moves, _bitboards[BLACK_KNIGHTS], ~_bitboards[ALL_BLACK].getData());
+        generateKingMoves(moves, _bitboards[BLACK_KING], ~_bitboards[ALL_BLACK].getData());
+        generatePawnMoves(moves, _bitboards[BLACK_PAWNS], _bitboards[ALL_BLACK], _bitboards[ALL_WHITE], Black);
+        GenerateBishopMoves(moves, _bitboards[BLACK_BISHOPS], _bitboards[OCCUPANCY], _bitboards[ALL_BLACK]);
+        GenerateRookMoves(moves, _bitboards[BLACK_ROOKS], _bitboards[OCCUPANCY], _bitboards[ALL_BLACK]); 
+        GenerateQueenMoves(moves, _bitboards[BLACK_QUEEN], _bitboards[OCCUPANCY], _bitboards[ALL_BLACK]);
+    }
+        
     //generate pawn is different wanting occupancy rather than free spaces
-    generatePawnMoves(moves, whitePawns, whiteOccupancy, blackOccupancy, White);
-    generatePawnMoves(moves, blackPawns, blackOccupancy, whiteOccupancy, Black);
-    return moves; //doesn't directly modify the member variable _moves so it can be reused
+
+   
+
+
+    return moves; 
 }
 
+//way it does it: array of bitboards and enum for their indexes. int _bitboardLookup[128]
+//changes let you make bitboards w/o branching
+//still need MagicBitboards.h
+//_bitboardKoop[''] = ENUM
 //generate bitboard of all possible locations a knight at square could do
 BitboardElement Chess::generateKnightMovesBitboard(int square) {
     BitboardElement bitboard = 0ULL;
@@ -466,7 +557,8 @@ void Chess::generateKnightMoves(std::vector<BitMove>& moves, BitboardElement kni
         //that knight but only the oens that are empty
         // Efficiently iterate through only the set bits
         moveBitboard.forEachBit([&](int toSquare) {
-           moves.emplace_back(fromSquare, toSquare, Knight);
+            //before I emplace I need to check if the proposed capture is on my side
+            moves.emplace_back(fromSquare, toSquare, Knight);
         });
     });
 }
@@ -564,12 +656,6 @@ void Chess::generatePawnMoves(std::vector<BitMove>&moves, BitboardElement pawns,
     PawnMovesFromBitboard(moves, rightCaptures, captureRight);
 
 
-
-
-
-
-
-
     /*//just checking that the masks work
     BitboardElement left(NOT_FA);
     BitboardElement right(NOT_FH);
@@ -586,3 +672,174 @@ void Chess::generatePawnMoves(std::vector<BitMove>&moves, BitboardElement pawns,
 
 
 }
+
+//generates all the valid moves for sliding pieces based on pre-computation magic
+void Chess::GenerateBishopMoves(std::vector<BitMove>&moves, BitboardElement bishops, BitboardElement occupied, BitboardElement allies) {
+    bishops.forEachBit([&](int fromSquare) {
+        BitboardElement attacks = getBishopAttacks(fromSquare, occupied.getData()); //pretty sure getBishopAttacks returns an uint64 so easy enough to turn into a Bitboard
+        //remove all attacks that are places where allies are. getAttacks calcuates for blocks, not if the piece itself is a valid capture
+        BitboardElement valid_attacks = attacks.getData() & ~allies.getData();
+        valid_attacks.forEachBit([&](int toSquare) {
+            moves.emplace_back(fromSquare, toSquare, Bishop);
+       });
+    });
+}
+
+void Chess::GenerateRookMoves(std::vector<BitMove>&moves, BitboardElement rooks, BitboardElement occupied, BitboardElement allies) {
+    rooks.forEachBit([&](int fromSquare) {
+        BitboardElement attacks = getRookAttacks(fromSquare, occupied.getData()); //pretty sure getBishopAttacks returns an uint64 so easy enough to turn into a Bitboard
+        //remove all attacks that are places where allies are. getAttacks calcuates for blocks, not if the piece itself is a valid capture
+        BitboardElement valid_attacks = attacks.getData() & ~allies.getData();
+        valid_attacks.forEachBit([&](int toSquare) {
+            moves.emplace_back(fromSquare, toSquare, Rook);
+       });
+    });
+}
+
+void Chess::GenerateQueenMoves(std::vector<BitMove>&moves, BitboardElement queen, BitboardElement occupied, BitboardElement allies) {
+    queen.forEachBit([&](int fromSquare) {
+        BitboardElement attacks = getQueenAttacks(fromSquare, occupied.getData()); //pretty sure getBishopAttacks returns an uint64 so easy enough to turn into a Bitboard
+        //remove all attacks that are places where allies are. getAttacks calcuates for blocks, not if the piece itself is a valid capture
+        BitboardElement valid_attacks = attacks.getData() & ~allies.getData();
+        valid_attacks.forEachBit([&](int toSquare) {
+            moves.emplace_back(fromSquare, toSquare, Queen);
+       });
+    });
+}
+
+//AI FUNCTIONS------
+//assume moves are legal and not handle check
+//copied from Connect4 AI
+void Chess::updateAI() {
+    _movesChecked = 0; //reset movesChecked for fresh AI call
+    int bestVal = negInfinite;
+    BitMove bestMove;
+    std::string state = stateString();
+    Logger *L = Logger::getInstance();
+    L->LogInfo("F10 is thinking...");
+    //evaluate all moves
+    for(auto move : _moves) { //use _moves, as when it became AI's turn, should have updated the variable to be of its side.
+        int srcSquare = move.from;
+        int dstSquare = move.to;
+        //save old data of the move
+        char oldPiece = state[dstSquare];
+        char movingPiece = state[srcSquare];
+        //preform the move
+        state[dstSquare] = movingPiece;
+        state[srcSquare] = '0';
+        int moveVal = -negamax(state, 0, -(_AI_COLOR), negInfinite, posInfinite); //run negamax starting with the other player's color
+        //that's why you want the - answer
+        //undo the move
+        state[dstSquare] = oldPiece;
+        state[srcSquare] = movingPiece;
+        //if evaluated move is the best, save it and update value
+        if (moveVal > bestVal) {
+                L->LogInfo("new best move " + to_string(move.from) + " to " + to_string(move.to) + ". With score " + to_string(moveVal));
+                bestMove = move;
+                bestVal = moveVal;
+        }
+        _movesChecked++;
+    }
+
+    //preform the move
+    if(bestVal != negInfinite) {
+        L->LogGameEvent(to_string(_movesChecked) + " moves evaluated. Making move...");
+        int srcSquare = bestMove.from;
+        int dstSquare = bestMove.to;
+        BitHolder& src = getHolderAt(srcSquare&7, srcSquare/8);
+        BitHolder& dst = getHolderAt(dstSquare&7, dstSquare/8);
+        Bit* bit = src.bit();
+        //actual moving
+        dst.dropBitAtPoint(bit, ImVec2(0, 0));
+        src.setBit(nullptr);
+        bitMovedFromTo(*bit, src, dst);
+    } else {
+        L->LogError("Didn't get a move better than negInfinite somehow.");
+    }
+}
+
+
+//
+// player is the current player's number (AI or human)
+//
+int Chess::negamax(std::string& state, int depth, int playerColor, int alpha, int beta) 
+{
+    //Logger *L = Logger::getInstance();
+    //L->LogInfo("negamax called at depth " + to_string(depth) + " with color " + to_string(playerColor));
+    //there is no draw state
+    if(state.npos)
+    //only evaluate at bottom depth
+    if(depth >= _gameOptions.AIMAXDepth) {
+        int score = evaluateBoard(state) * playerColor; //playerColor will be 1 (white) or -1 (black)
+        return score; //passing score up the recursion will ensure it has the right sign once it reaches updateAI
+    }
+    //if one side is down a king, also eval and return
+    if((state.find('K') == string::npos) || (state.find('k') == string::npos)) {
+        int score = evaluateBoard(state) * playerColor;
+        return score;
+    }
+    
+    int bestVal = negInfinite;
+    //only need to evaluate per free column
+    //L->LogInfo("calling generate all moves as negamax.");
+    vector<BitMove> moves = generateAllMoves(state, (ChessSide) playerColor);
+    //evaluate all moves
+    //evaluate all moves
+    for(auto move : moves) {
+        int srcSquare = move.from;
+        int dstSquare = move.to;
+        //save old data of the move
+        char oldPiece = state[dstSquare];
+        char movingPiece = state[srcSquare];
+        //preform the move
+        state[dstSquare] = movingPiece;
+        state[srcSquare] = '0';
+        int score = -negamax(state, depth + 1, -playerColor, -beta, -alpha);
+        //undo the move
+        state[dstSquare] = oldPiece;
+        state[srcSquare] = movingPiece;
+        _movesChecked++;
+        //alpha beta pruning
+        if(score > bestVal) {
+            bestVal = score;
+        }
+        if(bestVal > alpha) {
+            alpha = bestVal;
+        }
+        if(alpha >= beta){
+            break;
+        }
+    }
+    return bestVal;
+}
+
+
+
+//simple eval function
+//very similar to bitboard lookup
+//if black wants score from their prespective, multiypling it by -1
+int Chess::evaluateBoard(std::string state) {
+    int values[128];
+    values['P'] = 100;
+    values['N'] = 300;
+    values['B'] = 400;
+    values['R'] = 500;
+    values['Q'] = 900;
+    values['K'] = 2000;
+    values['p'] = -100;
+    values['n'] = -300;
+    values['b'] = -400;
+    values['r'] = -500;
+    values['q'] = -900;
+    values['k'] = -2000;
+    values['0'] = 0;
+
+    int score = 0;
+    for(char ch: state) {
+        score += values[ch];
+    }
+
+    return score;
+}
+
+//release build is faster
