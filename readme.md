@@ -16,3 +16,5 @@ Currently uses the simple evaluation function demonstrated in class.
 
 Keeps track of moves checked and prints it to the log before the move the AI has decided upon is made.
 
+Note, by default the FEN string in the source code generates an in-progress game instead of the starting positions.
+
